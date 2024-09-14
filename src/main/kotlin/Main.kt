@@ -1,5 +1,6 @@
 package org.example
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -9,6 +10,8 @@ import org.example.client.KudaGoClientImpl
 import org.example.dto.News
 import org.example.util.NewsPrinter
 import org.example.util.file.NewsFileManagerImpl
+
+private val logger = KotlinLogging.logger {}
 
 fun main() {
     val client = HttpClient(CIO) {
@@ -20,9 +23,12 @@ fun main() {
     val kudaGoClient = KudaGoClientImpl(client)
     val newsFileManager = NewsFileManagerImpl()
 
-    val newsList = kudaGoClient.getNews(1000)
+    logger.info { "Downloading news from API..." }
+    val newsList = kudaGoClient.getNews(10_000)
     val period = LocalDate(2023, 10, 31)..LocalDate(2024, 10, 31)
+    logger.info { "Filtering downloaded news..." }
     val filteredNews = newsList.getMostRatedNews(10, period)
+    logger.info { "Saving news to file..." }
     newsFileManager.saveNews("news.csv", filteredNews)
 
     printNews(filteredNews) { news ->

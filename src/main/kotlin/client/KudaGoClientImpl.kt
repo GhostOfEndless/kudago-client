@@ -7,6 +7,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import org.example.dto.News
 import org.example.dto.NewsResponse
 
@@ -18,6 +19,8 @@ class KudaGoClientImpl(
     companion object {
         private const val BASE_URL = "https://kudago.com/public-api/v1.4/news/"
         private const val MAX_PAGE_SIZE = 100
+        private const val MAX_RETRIES = 3
+        private const val RETRY_DELAY_MS = 1000L
     }
 
     private val logger = KotlinLogging.logger {}
@@ -35,34 +38,44 @@ class KudaGoClientImpl(
                         MAX_PAGE_SIZE
                     }
 
-                    logger.debug { "Fetch page with number '$page' and size '$currentPageSize'" }
-                    val response: HttpResponse = client.get(BASE_URL) {
-                        parameter("location", "msk")
-                        parameter("text_format", "text")
-                        parameter("expand", "place")
-                        parameter("fields", "id,title,place,description,site_url,favorites_count,comments_count,publication_date")
-                        parameter("page_size", currentPageSize)
-                        parameter("page", page)
-
-                    }
-
-                    when (response.status) {
-                        HttpStatusCode.OK -> {
-                            val newsResponse = response.body<NewsResponse>()
-                            newsList.addAll(newsResponse.results)
-                        }
-
-                        else -> {
-                            throw Exception("Unexpected HTTP status code: ${response.status}")
-                        }
-                    }
+                    val newsResponse = retryRequest(page, currentPageSize)
+                    newsList.addAll(newsResponse.results)
                 }
 
+                logger.info { "Successfully fetched data!" }
                 newsList
             } catch (e: Exception) {
                 logger.error { "Error: ${e.message}" }
                 emptyList()
             }
         }
+    }
+
+    private suspend fun retryRequest(page: Int, pageSize: Int): NewsResponse {
+        repeat(MAX_RETRIES) { attempt ->
+            try {
+                logger.debug { "Getting page with number '$page' and size '$pageSize' (Attempt ${attempt + 1})..." }
+                val response: HttpResponse = client.get(BASE_URL) {
+                    parameter("location", "msk")
+                    parameter("text_format", "text")
+                    parameter("expand", "place")
+                    parameter("fields", "id,title,place,description,site_url,favorites_count,comments_count,publication_date")
+                    parameter("page_size", pageSize)
+                    parameter("page", page)
+                }
+
+                if (response.status == HttpStatusCode.OK) {
+                    logger.debug { "Successfully fetched data from remote API!" }
+                    return response.body<NewsResponse>()
+                } else {
+                    throw Exception("Unexpected HTTP status code: ${response.status}")
+                }
+            } catch (e: Exception) {
+                logger.error { "Error on attempt ${attempt + 1}: ${e.message}" }
+                if (attempt == MAX_RETRIES - 1) throw e
+                delay(RETRY_DELAY_MS)
+            }
+        }
+        throw Exception("Max retries number reached! Check your internet connection")
     }
 }

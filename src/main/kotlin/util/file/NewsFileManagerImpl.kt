@@ -11,7 +11,7 @@ class NewsFileManagerImpl: NewsFileManager {
     override fun saveNews(path: String, news: Collection<News>) {
         val file = File(path)
         if (file.exists()) {
-            logger.warn { "File already exists at path: $path File will be rewrite" }
+            logger.warn { "File already exists at path: $path It's will be rewrite" }
             file.delete()
         }
 
@@ -23,5 +23,7 @@ class NewsFileManagerImpl: NewsFileManager {
                         "${newsItem.publicationDate};${newsItem.rating}\n")
             }
         }
+
+        logger.info { "Successfully save to file!" }
     }
 }
