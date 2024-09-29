@@ -31,21 +31,21 @@ fun main() {
     logger.info { "Saving news to file..." }
     newsFileManager.saveNews("news.csv", filteredNews)
 
-    printNews(filteredNews) { news ->
-        header(1) { bold(news.title) }
+    printNews(filteredNews) {
+        header(1) { bold(it.title) }
 
-        text { "Дата публикации: ${news.publicationDate}" }
-        text { "Местоположение: ${underlined(news.place)}" }
+        text { "Дата публикации: ${it.publicationDate}" }
+        text { "Местоположение: ${underlined(it.place)}" }
 
         header(2) { "Описание" }
-        text { news.description }
+        text { it.description }
 
         header(2) { "Статистика" }
-        text { "Закладки: ${news.favoritesCount}" }
-        text { "Комментарии: ${news.commentsCount}" }
-        text { "Рейтинг: ${String.format("%.2f", news.rating)}" }
+        text { "Закладки: ${it.favoritesCount}" }
+        text { "Комментарии: ${it.commentsCount}" }
+        text { "Рейтинг: ${String.format("%.2f", it.rating)}" }
 
-        text { "Читать в источнике: ${link(news.siteUrl, "ссылка")}" }
+        text { "Читать в источнике: ${link(it.siteUrl, "ссылка")}" }
     }
 }
 
