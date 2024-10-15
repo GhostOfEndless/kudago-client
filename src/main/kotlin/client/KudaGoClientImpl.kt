@@ -17,15 +17,25 @@ class KudaGoClientImpl(
 ) : KudaGoClient {
 
     companion object {
-        private const val BASE_URL = "https://kudago.com/public-api/v1.4/news/"
-        private const val MAX_PAGE_SIZE = 100
-        private const val MAX_RETRIES = 3
-        private const val RETRY_DELAY_MS = 1000L
+        const val BASE_URL = "https://kudago.com/public-api/v1.4/news/"
+        const val MAX_PAGE_SIZE = 100
+        const val MAX_RETRIES = 3
+        const val RETRY_DELAY_MS = 1000L
     }
 
     private val logger = KotlinLogging.logger {}
 
-    override fun getNews(count: Int): List<News> {
+    suspend fun getNewsPage(page: Int, pageSize: Int): List<News> {
+        return try {
+            val response = retryRequest(page, pageSize)
+            response.results
+        } catch (e: Exception) {
+            logger.error { "Failed to fetch news: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    override fun getAllNews(count: Int): List<News> {
         return runBlocking {
             try {
                 val newsList = mutableListOf<News>()

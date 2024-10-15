@@ -7,46 +7,44 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.datetime.LocalDate
 import org.example.client.KudaGoClientImpl
+import org.example.client.KudaGoCoroutineFlow
 import org.example.dto.News
 import org.example.util.NewsPrinter
 import org.example.util.file.NewsFileManagerImpl
+import kotlin.system.measureTimeMillis
 
 private val logger = KotlinLogging.logger {}
 
-fun main() {
+suspend fun main() {
     val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json()
         }
     }
 
+    val totalNewsCount = 10_000
+    val workerCount = 3
+
     val kudaGoClient = KudaGoClientImpl(client)
     val newsFileManager = NewsFileManagerImpl()
 
     logger.info { "Downloading news from API..." }
-    val newsList = kudaGoClient.getNews(10_000)
+    val newsList = kudaGoClient.getAllNews(totalNewsCount)
     val period = LocalDate(2023, 10, 31)..LocalDate(2024, 10, 31)
     logger.info { "Filtering downloaded news..." }
     val filteredNews = newsList.getMostRatedNews(10, period)
     logger.info { "Saving news to file..." }
     newsFileManager.saveNews("news.csv", filteredNews)
 
-    printNews(filteredNews) {
-        header(1) { bold(it.title) }
+    printNews(filteredNews)
 
-        text { "Дата публикации: ${it.publicationDate}" }
-        text { "Местоположение: ${underlined(it.place)}" }
+    val flow = KudaGoCoroutineFlow(kudaGoClient, totalNewsCount, workerCount)
 
-        header(2) { "Описание" }
-        text { it.description }
-
-        header(2) { "Статистика" }
-        text { "Закладки: ${it.favoritesCount}" }
-        text { "Комментарии: ${it.commentsCount}" }
-        text { "Рейтинг: ${String.format("%.2f", it.rating)}" }
-
-        text { "Читать в источнике: ${link(it.siteUrl, "ссылка")}" }
+    val time = measureTimeMillis {
+        flow.execute()
     }
+
+    println("Execution completed in $time ms")
 }
 
 fun List<News>.getMostRatedNews(
@@ -58,13 +56,8 @@ fun List<News>.getMostRatedNews(
     }.sortedByDescending { it.rating }.take(count)
 }
 
-fun printNews(newsList: List<News>, block: NewsPrinter.(News) -> Unit) {
+fun printNews(newsList: List<News>) {
     val printer = NewsPrinter()
-    newsList.forEachIndexed { index, news ->
-        printer.block(news)
-        if (index < newsList.size - 1) {
-            printer.divider()
-        }
-    }
+    newsList.forEach { news -> printer.formatNews(news) }
     println(printer.build())
 }
