@@ -21,6 +21,8 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.16")
     implementation("io.github.oshai:kotlin-logging:7.0.0")
 
+    implementation("com.typesafe:config:1.4.3")
+
     testImplementation(kotlin("test"))
 }
 

@@ -1,5 +1,6 @@
 package org.example.client
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -14,9 +15,11 @@ import kotlin.math.ceil
 class KudaGoCoroutineFlow(
     private val kudaGoClient: KudaGoClientImpl,
     private val totalNewsCount: Int,
-    private val workerCount: Int
+    private val workerCount: Int,
+    private val maxPageSize: Int = 100
 ) {
 
+    private val logger = KotlinLogging.logger {}
     private val channel = Channel<News>(Channel.UNLIMITED)
     @OptIn(DelicateCoroutinesApi::class)
     private val threadPool = newFixedThreadPoolContext(workerCount, "WorkerPool")
@@ -37,18 +40,19 @@ class KudaGoCoroutineFlow(
     }
 
     private suspend fun worker(id: Int) {
-        val totalPages = ceil(totalNewsCount.toDouble() / KudaGoClientImpl.MAX_PAGE_SIZE).toInt()
+        val totalPages = ceil(totalNewsCount.toDouble() / maxPageSize).toInt()
         var currentPage = id
 
         while (currentPage < totalPages) {
-            val news = kudaGoClient.getNewsPage(currentPage + 1, KudaGoClientImpl.MAX_PAGE_SIZE)
+            logger.debug { "Worker $id fetch page ${currentPage + 1}" }
+            val news = kudaGoClient.getNewsPage(currentPage + 1, maxPageSize)
             news.forEach { channel.send(it) }
             currentPage += workerCount
         }
     }
 
     private suspend fun processor() {
-        File("news_output.md").bufferedWriter().use { writer ->
+        File("news.md").bufferedWriter().use { writer ->
             for (news in channel) {
                 printer.formatNews(news)
                 writer.write(printer.build())
