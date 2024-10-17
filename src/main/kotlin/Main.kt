@@ -1,5 +1,6 @@
 package org.example
 
+import com.typesafe.config.ConfigFactory
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.engine.cio.CIO
@@ -7,64 +8,75 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.datetime.LocalDate
 import org.example.client.KudaGoClientImpl
+import org.example.client.KudaGoCoroutineFlow
 import org.example.dto.News
 import org.example.util.NewsPrinter
 import org.example.util.file.NewsFileManagerImpl
+import java.io.File
+import kotlin.system.measureTimeMillis
 
 private val logger = KotlinLogging.logger {}
 
-fun main() {
+class AppConfig(configFile: String = "src/main/resources/application.conf") {
+
+    private val config = ConfigFactory.parseFile(File(configFile)).resolve()
+
+    val totalNewsCount: Int = config.getInt("app.totalNewsCount")
+    val workerCount: Int = config.getInt("app.workerCount")
+    val maxConcurrentRequests: Int = config.getInt("app.maxConcurrentRequests")
+    val maxPageSize: Int = config.getInt("app.maxPageSize")
+    val maxRetries: Int = config.getInt("app.maxRetries")
+    val retryDelay: Long = config.getLong("app.retryDelay")
+    val baseUrl: String = config.getString("app.baseUrl")
+}
+
+
+suspend fun main() {
+    val config = AppConfig()
     val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json()
         }
     }
 
-    val kudaGoClient = KudaGoClientImpl(client)
     val newsFileManager = NewsFileManagerImpl()
+    val kudaGoClient = KudaGoClientImpl(
+        client, config.baseUrl, config.maxPageSize,
+        config.maxRetries, config.retryDelay, config.maxConcurrentRequests
+    )
 
     logger.info { "Downloading news from API..." }
-    val newsList = kudaGoClient.getNews(10_000)
+    val newsList = kudaGoClient.getAllNews(config.totalNewsCount)
     val period = LocalDate(2023, 10, 31)..LocalDate(2024, 10, 31)
     logger.info { "Filtering downloaded news..." }
     val filteredNews = newsList.getMostRatedNews(10, period)
     logger.info { "Saving news to file..." }
     newsFileManager.saveNews("news.csv", filteredNews)
 
-    printNews(filteredNews) {
-        header(1) { bold(it.title) }
+    printNews(filteredNews)
 
-        text { "Дата публикации: ${it.publicationDate}" }
-        text { "Местоположение: ${underlined(it.place)}" }
+    val flow = KudaGoCoroutineFlow(
+        kudaGoClient, config.totalNewsCount,
+        config.workerCount, config.maxPageSize
+    )
 
-        header(2) { "Описание" }
-        text { it.description }
-
-        header(2) { "Статистика" }
-        text { "Закладки: ${it.favoritesCount}" }
-        text { "Комментарии: ${it.commentsCount}" }
-        text { "Рейтинг: ${String.format("%.2f", it.rating)}" }
-
-        text { "Читать в источнике: ${link(it.siteUrl, "ссылка")}" }
+    val time = measureTimeMillis {
+        flow.execute()
     }
+
+    logger.info { "Execution completed in $time ms" }
 }
 
 fun List<News>.getMostRatedNews(
-    count: Int,
-    period: ClosedRange<LocalDate>
+    count: Int, period: ClosedRange<LocalDate>
 ): List<News> {
     return this.filter { news ->
         news.publicationDate.date in period
     }.sortedByDescending { it.rating }.take(count)
 }
 
-fun printNews(newsList: List<News>, block: NewsPrinter.(News) -> Unit) {
+fun printNews(newsList: List<News>) {
     val printer = NewsPrinter()
-    newsList.forEachIndexed { index, news ->
-        printer.block(news)
-        if (index < newsList.size - 1) {
-            printer.divider()
-        }
-    }
+    newsList.forEach { news -> printer.formatNews(news) }
     println(printer.build())
 }
